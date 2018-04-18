@@ -25,140 +25,244 @@
 #include <xboot.h>
 #include <graphic/matrix.h>
 
-void matrix_transform_init(struct matrix_transform_t * m,
-		double a, double b, double x,
-		double c, double d, double y)
+void matrix_init(struct matrix_t * m,
+		double xx, double yx,
+		double xy, double yy,
+		double x0, double y0)
 {
-	m->a = a;	m->b = b;	m->x = x;
-	m->c = c;	m->d = d;	m->y = y;
+	m->xx = xx;	m->yx = yx;
+	m->xy = xy; m->yy = yy;
+	m->x0 = x0;	m->y0 = y0;
 }
 
-void matrix_transform_init_identity(struct matrix_transform_t * m)
+void matrix_init_identity(struct matrix_t * m)
 {
-	m->a = 1;	m->b = 0;	m->x = 0;
-	m->c = 0;	m->d = 1;	m->y = 0;
+	m->xx = 1; m->yx = 0;
+	m->xy = 0; m->yy = 1;
+	m->x0 = 0; m->y0 = 0;
 }
 
-void matrix_transform_init_translate(struct matrix_transform_t * m,
+void matrix_init_translate(struct matrix_t * m,
 		double tx, double ty)
 {
-	m->a = 1;	m->b = 0;	m->x = tx;
-	m->c = 0;	m->d = 1;	m->y = ty;
+	m->xx = 1;  m->yx = 0;
+	m->xy = 0;  m->yy = 1;
+	m->x0 = tx; m->y0 = ty;
 }
 
-void matrix_transform_init_scale(struct matrix_transform_t * m,
+void matrix_init_scale(struct matrix_t * m,
 		double sx, double sy)
 {
-	m->a = sx;	m->b = 0;	m->x = 0;
-	m->c = 0;	m->d = sy;	m->y = 0;
+	m->xx = sx; m->yx = 0;
+	m->xy = 0;  m->yy = sy;
+	m->x0 = 0;  m->y0 = 0;
 }
 
-void matrix_transform_init_rotate(struct matrix_transform_t * m,
-		double c, double s)
+void matrix_init_rotate(struct matrix_t * m, double r)
 {
-	m->a = c;	m->b = -s;	m->x = 0;
-	m->c = s;	m->d = c;	m->y = 0;
-}
+    double s = sin(r);
+    double c = cos(r);
 
-void matrix_transform_init_shear(struct matrix_transform_t * m,
-		double x, double y)
-{
-	m->a = 1;	m->b = x;	m->x = 0;
-	m->c = y;	m->d = 1;	m->y = 0;
+	m->xx = c;  m->yx = s;
+	m->xy = -s; m->yy = c;
+	m->x0 = 0;  m->y0 = 0;
 }
 
 /*
- * | [m->a] [m->b] [m->x] |   | [m1->a] [m1->b] [m1->x] |   | [m2->a] [m2->b] [m2->x] |
- * | [m->c] [m->d] [m->y] | = | [m1->c] [m1->d] [m1->y] | x | [m2->c] [m2->d] [m2->y] |
- * | [0]    [0]    [1]    |   | [0]     [0]     [1]     |   | [0]     [0]     [1]     |
+ * | [m->xx] [m->yx] [0] |   | [m1->xx] [m1->yx] [0] |   | [m2->xx] [m2->yx] [0] |
+ * | [m->xy] [m->yy] [0] | = | [m1->xy] [m1->yy] [0] | x | [m2->xy] [m2->yy] [0] |
+ * | [m->x0] [m->y0] [1] |   | [m1->x0] [m1->y0] [1] |   | [m2->x0] [m2->y0] [1] |
  */
-void matrix_transform_multiply(struct matrix_transform_t * m,
-		const struct matrix_transform_t * m1,
-		const struct matrix_transform_t * m2)
+void matrix_multiply(struct matrix_t * m,
+		const struct matrix_t * m1,
+		const struct matrix_t * m2)
 {
-	struct matrix_transform_t t;
+	struct matrix_t t;
 
-	t.a = m1->a * m2->a + m1->b * m2->c;
-	t.b = m1->a * m2->b + m1->b * m2->d;
-	t.x = m1->a * m2->x + m1->b * m2->y + m1->x;
+    t.xx = m1->xx * m2->xx + m1->yx * m2->xy;
+    t.yx = m1->xx * m2->yx + m1->yx * m2->yy;
 
-	t.c = m1->c * m2->a + m1->d * m2->c;
-	t.d = m1->c * m2->b + m1->d * m2->d;
-	t.y = m1->c * m2->x + m1->d * m2->y + m1->y;
+    t.xy = m1->xy * m2->xx + m1->yy * m2->xy;
+    t.yy = m1->xy * m2->yx + m1->yy * m2->yy;
 
-	memcpy(m, &t, sizeof(struct matrix_transform_t));
+    t.x0 = m1->x0 * m2->xx + m1->y0 * m2->xy + m2->x0;
+    t.y0 = m1->x0 * m2->yx + m1->y0 * m2->yy + m2->y0;
+
+	memcpy(m, &t, sizeof(struct matrix_t));
 }
 
-void matrix_transform_invert(struct matrix_transform_t * m, const struct matrix_transform_t * i)
+void matrix_invert(struct matrix_t * m)
 {
-	struct matrix_transform_t t;
+	double a, b, c, d, tx, ty;
 	double det;
 
-	det = i->a * i->d - i->b * i->c;
-
-	if(det == 0.0)
+	if((m->xy == 0.0) && (m->yx == 0.0))
 	{
-		matrix_transform_init_identity(m);
-		return;
+		m->x0 = -m->x0;
+		m->y0 = -m->y0;
+		if(m->xx != 1.0)
+		{
+			if(m->xx == 0.0)
+				return;
+			m->xx = 1.0 / m->xx;
+			m->x0 *= m->xx;
+		}
+		if(m->yy != 1.0)
+		{
+			if(m->yy == 0.0)
+				return;
+			m->yy = 1.0 / m->yy;
+			m->y0 *= m->yy;
+		}
 	}
-
-	t.a = i->d / det;
-	t.b = -i->b / det;
-	t.c = -i->c / det;
-	t.d = i->a / det;
-	t.x = (i->c * i->y - i->d * i->x) / det;
-	t.y = (i->b * i->x - i->a * i->y) / det;
-
-	memcpy(m, &t, sizeof(struct matrix_transform_t));
+	else
+	{
+		det = m->xx * m->yy - m->yx * m->xy;
+		if(det != 0.0)
+		{
+			a  = m->xx;
+			b  = m->yx;
+			c  = m->xy;
+			d  = m->yy;
+			tx = m->x0;
+			ty = m->y0;
+			m->xx = d / det;
+			m->yx = -b / det;
+			m->xy = -c / det;
+			m->yy = a / det;
+			m->x0 = (c * ty - d * tx) / det;
+			m->y0 = (b * tx - a * ty) / det;
+		}
+	}
 }
 
-void matrix_transform_translate(struct matrix_transform_t * m, double tx, double ty)
+void matrix_translate(struct matrix_t * m, double tx, double ty)
 {
-	struct matrix_transform_t t;
+	struct matrix_t t;
 
-	matrix_transform_init_translate(&t, tx, ty);
-	matrix_transform_multiply(m, &t, m);
+	matrix_init_translate(&t, tx, ty);
+	matrix_multiply(m, &t, m);
 }
 
-void matrix_transform_scale(struct matrix_transform_t * m, double sx, double sy)
+void matrix_scale(struct matrix_t * m, double sx, double sy)
 {
-	struct matrix_transform_t t;
+	struct matrix_t t;
 
-	matrix_transform_init_scale(&t, sx, sy);
-	matrix_transform_multiply(m, &t, m);
+	matrix_init_scale(&t, sx, sy);
+	matrix_multiply(m, &t, m);
 }
 
-void matrix_transform_rotate(struct matrix_transform_t * m, double c, double s)
+void matrix_rotate(struct matrix_t * m, double r)
 {
-	struct matrix_transform_t t;
+	struct matrix_t t;
 
-	matrix_transform_init_rotate(&t, c, s);
-	matrix_transform_multiply(m, &t, m);
+	matrix_init_rotate(&t, r);
+	matrix_multiply(m, &t, m);
 }
 
-void matrix_transform_shear(struct matrix_transform_t * m, double x, double y)
+void matrix_transform_distance(const struct matrix_t * m, double * dx, double * dy)
 {
-	struct matrix_transform_t t;
+    double nx, ny;
 
-	matrix_transform_init_shear(&t, x, y);
-	matrix_transform_multiply(m, &t, m);
+    nx = (m->xx * (*dx) + m->xy * (*dy));
+    ny = (m->yx * (*dx) + m->yy * (*dy));
+    *dx = nx;
+    *dy = ny;
 }
 
-void matrix_transform_distance(const struct matrix_transform_t * m, double * dx, double * dy)
-{
-	double nx, ny;
-
-	nx = m->a * (*dx) + m->b * (*dy);
-	ny = m->c * (*dx) + m->d * (*dy);
-
-	*dx = nx;
-	*dy = ny;
-}
-
-void matrix_transform_point(const struct matrix_transform_t * m, double * x, double * y)
+void matrix_transform_point(const struct matrix_t * m, double * x, double * y)
 {
 	matrix_transform_distance(m, x, y);
+	*x += m->x0;
+	*y += m->y0;
+}
 
-	*x += m->x;
-	*y += m->y;
+void matrix_transform_bounds(const struct matrix_t * m, double * x1, double * y1, double * x2, double * y2)
+{
+	double qx[4], qy[4];
+	double minx, maxx;
+	double miny, maxy;
+	int i;
+
+	if((m->xy == 0.0) && (m->yx == 0.0))
+	{
+		if(m->xx != 1.0)
+		{
+			qx[0] = (*x1) * m->xx;
+			qx[1] = (*x2) * m->xx;
+			if(qx[0] < qx[1])
+			{
+				*x1 = qx[0];
+				*x2 = qx[1];
+			}
+			else
+			{
+				*x1 = qx[1];
+				*x2 = qx[0];
+			}
+		}
+		if(m->x0 != 0.0)
+		{
+			*x1 += m->x0;
+			*x2 += m->x0;
+		}
+		if(m->yy != 1.0)
+		{
+			qy[0] = (*y1) * m->yy;
+			qy[1] = (*y2) * m->yy;
+			if(qy[0] < qy[1])
+			{
+				*y1 = qy[0];
+				*y2 = qy[1];
+			}
+			else
+			{
+				*y1 = qy[1];
+				*y2 = qy[0];
+			}
+		}
+		if(m->y0 != 0.0)
+		{
+			*y1 += m->y0;
+			*y2 += m->y0;
+		}
+		return;
+	}
+	else
+	{
+		qx[0] = *x1;
+		qy[0] = *y1;
+		matrix_transform_point(m, &qx[0], &qy[0]);
+
+		qx[1] = *x2;
+		qy[1] = *y1;
+		matrix_transform_point(m, &qx[1], &qy[1]);
+
+		qx[2] = *x1;
+		qy[2] = *y2;
+		matrix_transform_point(m, &qx[2], &qy[2]);
+
+		qx[3] = *x2;
+		qy[3] = *y2;
+		matrix_transform_point(m, &qx[3], &qy[3]);
+
+		minx = maxx = qx[0];
+		miny = maxy = qy[0];
+
+		for(i = 1; i < 4; i++)
+		{
+			if(qx[i] < minx)
+				minx = qx[i];
+			if(qx[i] > maxx)
+				maxx = qx[i];
+			if(qy[i] < miny)
+				miny = qy[i];
+			if(qy[i] > maxy)
+				maxy = qy[i];
+		}
+		*x1 = minx;
+		*y1 = miny;
+		*x2 = maxx;
+		*y2 = maxy;
+	}
 }
