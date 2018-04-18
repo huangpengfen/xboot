@@ -1,5 +1,5 @@
-#ifndef __MATRIX_H__
-#define __MATRIX_H__
+#ifndef __GRAPHIC_MATRIX_H__
+#define __GRAPHIC_MATRIX_H__
 
 #ifdef __cplusplus
 extern "C" {
@@ -37,4 +37,4 @@ void matrix_transform_bounds(const struct matrix_t * m, double * x1, double * y1
 }
 #endif
 
-#endif /* __MATRIX_H__ */
+#endif /* __GRAPHIC_MATRIX_H__ */
